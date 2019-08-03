@@ -49,6 +49,25 @@ let rec cogen_expr env ast =
       op_code;
       "\tpushq\t%rax"
     ])
+  | Cc_ast.EXPR_UN_OP(op, expr) ->
+    let code = cogen_expr env expr in
+    (match op with
+    | Cc_ast.UN_OP_PLUS -> code
+    | Cc_ast.UN_OP_MINUS -> multi_string [
+        code;
+        "\tpopq\t%rax";
+        "\timulq\t$-1, %rax";
+        "\tpushq\t%rax"
+      ]
+    | Cc_ast.UN_OP_BANG -> multi_string [
+        code;
+        "\tpopq\t%rbx";
+        "\txorl\t%eax, %eax";
+        "\ttestq\t%rbx, %rbx";
+        "\tsete\t%al";
+        "\tpushq\t%rax"
+      ]
+    )
 ;;
 
 let rec cogen_stmt env ast =
