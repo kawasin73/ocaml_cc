@@ -19,16 +19,25 @@ let multi_string l =
   (String.concat "\n" l)
 ;;
 
-let rec cogen_expr ast =
+let rec cogen_expr env ast =
   match ast with
   | Cc_ast.EXPR_NUM(v) -> (multi_string [
-    sp "\tmov\t$%d, %%rax" v;
-    "\tpushq\t%rax"
-  ])
-  (* | Cc_ast.EXPR_VAR(v) -> VAR_VAR *)
+      sp "\tmov\t$%d, %%rax" v;
+      "\tpushq\t%rax"
+    ])
+  | Cc_ast.EXPR_VAR(v) ->
+    let find_var name v =
+      let n, _ = v in n = name
+    in
+    let (_, env_vars) = env in
+    let _, offset = List.find (find_var v) env_vars in
+    (multi_string [
+      sp "\tmovq\t%d(%%rbp), %%rax" offset;
+      "\tpushq\t%rax"
+    ])
   | Cc_ast.EXPR_BIN_OP(op, a, b) ->
-    let code_a = cogen_expr(a) in
-    let code_b = cogen_expr(b) in
+    let code_a = cogen_expr env a in
+    let code_b = cogen_expr env b in
     let op_code = (match op with
     | Cc_ast.BIN_OP_PLUS -> "\taddq\t%rbx, %rax"
     ) in
@@ -42,34 +51,88 @@ let rec cogen_expr ast =
     ])
 ;;
 
-let rec cogen_stmt ast =
+let rec cogen_stmt env ast =
   match ast with
   | Cc_ast.STMT_RETURN(v) ->
-    let code = cogen_expr(v) in
+    let code = cogen_expr env v in
+    let (end_label, _) = env in
     multi_string [
       code;
       "\tpopq\t%rax";
-      "\tret"
+      sp "\tjmp\t%s" end_label
     ]
-  | Cc_ast.STMT_COMPOUND(_, stmts) -> map_cat "\n" cogen_stmt stmts
+  | Cc_ast.STMT_COMPOUND(_, stmts) -> map_cat "\n" (cogen_stmt env) stmts
 ;;
 
+let args_regs = ["rdi"; "rsi"; "rdx"; "rcx"; "r8"; "r9"]
+;;
+
+let cogen_args args =
+  let cogen_arg i arg =
+    if i < 6 then
+      (multi_string [
+        sp "\tmovq\t%%%s, %d(%%rbp)" (List.nth args_regs i) (-(i+1)*8)
+      ])
+    else
+      "TODO"
+  in
+  let env_arg i arg =
+    let _, name = arg in
+    if i < 6 then
+      (name, -(i+1) * 8)
+    else
+      (name, (i-5)*8)
+  in
+  let code = map_cati "\n" cogen_arg args in
+  let env = List.mapi env_arg args in
+  code, env
+;;
+
+let cogen_extend_stack args stmt =
+  match stmt with
+  | Cc_ast.STMT_COMPOUND(vars, _) ->
+    let arg_len = (if (List.length args) < 6 then
+      List.length args
+    else
+      6) in
+    let size = 8 * (arg_len + (List.length vars)) in
+    sp "\tsubq\t$%d, %%rsp" size
+
+
 let cogen_fundef i ast =
+  let start_label = sp ".LFB%d" i in
+  let end_label = sp ".LFE%d" i in
   match ast with
-  Cc_ast.FUN_DEF(_, name, _, stmt) ->
-  let header = sp "	.p2align 4,,15
-	.globl	%s
-	.type	%s, @function
-%s:
-.LFB%d:
-	.cfi_startproc
-" name name name i in
-  let footer = sp "	.cfi_endproc
-.LFE%d:
-	.size	%s, .-%s" i name name in
-  let b = cogen_stmt stmt in
-  let body = if b = "" then "\tret\n" else b ^ "\n" in
-  header ^ body ^ footer
+  Cc_ast.FUN_DEF(_, name, args, stmt) ->
+  let header = multi_string [
+    "\t.p2align 4,,15";
+    sp "\t.globl\t%s" name;
+    sp "\t.type\t%s, @function" name;
+    sp "%s:" name;
+    sp "%s:" start_label;
+    "\t.cfi_startproc";
+    "\tpushq	%rbp";
+    "\tmovq	%rsp, %rbp"
+  ] in
+  let footer = multi_string [
+    "\t.cfi_endproc";
+    sp "%s:" end_label;
+    "\tmovq	%rbp, %rsp";
+    "\tpopq	%rbp";
+    "\tret";
+    sp "\t.size\t%s, .-%s" name name
+  ] in
+  let code_args, env_vars = cogen_args args in
+  let code_extend = cogen_extend_stack args stmt in
+  let b = cogen_stmt (end_label, env_vars) stmt in
+  let body = if b = "" then (sp "\tjmp	%s" end_label) else b in
+  multi_string [
+    header;
+    code_extend;
+    code_args;
+    body;
+    footer;
+  ]
 ;;
 
 (* これを作るのが仕事 (cc.ml の cogen_file を参照 *)
