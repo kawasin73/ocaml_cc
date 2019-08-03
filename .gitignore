@@ -2,3 +2,5 @@
 _build
 cc.byte
 cc.top
+4_cogen/exe/*
+4_cogen/check/*

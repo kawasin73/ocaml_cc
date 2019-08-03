@@ -35,6 +35,11 @@ let cogen_buf b src_name =
   Cc_cogen.cogen_program prog src_name
 ;;
 
+let cogen_string s src_name =
+  let b = Lexing.from_string s in
+  cogen_buf b src_name
+;;
+
 (* file -> ir -> asm *)
 let cogen_file filename_c filename_s =
   let ch = open_in filename_c in
