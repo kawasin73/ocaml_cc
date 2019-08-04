@@ -213,6 +213,21 @@ let rec cogen_stmt env ast =
       code_else;
       sp "%s:" label_end
     ]
+  | Cc_ast.STMT_WHILE(cond, stmt) ->
+    let label_cond = gen_label () in
+    let label_end = gen_label () in
+    let code_cond = cogen_expr env cond in
+    let code_stmt = cogen_stmt env stmt in
+    multi_string [
+      sp "%s:" label_cond;
+      code_cond;
+      "\tpopq\t%rax";
+      "\ttestq\t%rax, %rax";
+      sp "\tje\t%s" label_end;
+      code_stmt;
+      sp "\tjmp\t%s" label_cond;
+      sp "%s:" label_end;
+    ]
 ;;
 
 let args_regs = ["rdi"; "rsi"; "rdx"; "rcx"; "r8"; "r9"]
