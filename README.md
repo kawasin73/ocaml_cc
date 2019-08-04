@@ -8,9 +8,16 @@ Ocaml で簡単な C 言語のコンパイラを実装します。
 
 Docker を利用して開発します。
 
-```
+```bash
 $ docker-compose run --rm ocaml bash
 
 # コンテナ内で
-$ cd /code
+$ cd /code/4_cogen
+# コンパイル
+$ make && ./cc.byte test.c test.s
+# REPL
+$ make && ./cc.top -I _build
+
+# テスト
+$ make -f test.mk
 ```

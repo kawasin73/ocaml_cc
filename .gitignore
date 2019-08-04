@@ -4,3 +4,8 @@ cc.byte
 cc.top
 4_cogen/exe/*
 4_cogen/check/*
+fun.i
+fun.s
+fun_occ.s
+test.c
+test.s
