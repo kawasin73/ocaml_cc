@@ -32,13 +32,27 @@ let take n l =
   List.map unwrap (List.filter (first_nth n) (List.mapi combine l))
 ;;
 
-let find_var_offset name env =
-  let find_var v =
-    let n, _ = v in n = name
-  in
-  let (_, _, env_vars) = env in
-  let _, offset = List.find find_var env_vars in
-  offset
+class environment (end_label:string) len_stack env_vars =
+object
+  val end_label = end_label
+  val len_stack = len_stack
+  val env_vars = env_vars
+  method end_label =
+    end_label
+  method find_var_offset name =
+    let find_var v =
+      let n, _ = v in n = name
+    in
+    let _, offset = List.find find_var env_vars in
+    offset
+  method add_vars (new_vars: (Cc_ast.type_expr * string) list) =
+    let conv_env_var i var =
+      let (_, name) = var in
+      (name, -(i+len_stack+1) * 8)
+    in
+    let new_env_vars = env_vars @ List.mapi conv_env_var new_vars in
+    {<len_stack = (len_stack + List.length new_vars); env_vars = new_env_vars>}
+end
 ;;
 
 let rec cogen_expr env ast =
@@ -48,7 +62,7 @@ let rec cogen_expr env ast =
       "\tpushq\t%rax"
     ])
   | Cc_ast.EXPR_VAR(name) ->
-    let offset = find_var_offset name env in
+    let offset = env#find_var_offset name in
     (multi_string [
       sp "\tmovq\t%d(%%rbp), %%rax" offset;
       "\tpushq\t%rax"
@@ -60,7 +74,7 @@ let rec cogen_expr env ast =
       (match a with
       (* a must be variable name *)
       | Cc_ast.EXPR_VAR(name) ->
-        let offset = find_var_offset name env in
+        let offset = env#find_var_offset name in
         multi_string [
           code_b;
           "\tpopq\t%rax";
@@ -168,11 +182,10 @@ let rec cogen_stmt env ast =
   | Cc_ast.STMT_EMPTY -> ""
   | Cc_ast.STMT_RETURN(v) ->
     let code = cogen_expr env v in
-    let (end_label, _, _) = env in
     multi_string [
       code;
       "\tpopq\t%rax";
-      sp "\tjmp\t%s" end_label
+      sp "\tjmp\t%s" env#end_label
     ]
   | Cc_ast.STMT_EXPR(expr) ->
     let code = cogen_expr env expr in
@@ -181,13 +194,7 @@ let rec cogen_stmt env ast =
       "\tpopq\t%rax"
     ]
   | Cc_ast.STMT_COMPOUND(vars, stmts) ->
-    let (end_label, len_stack, env_vars) = env in
-    let conv_env_var i var =
-      let (_, name) = var in
-      (name, -(i+7) * 8)
-    in
-    let new_env_vars = env_vars @ List.mapi conv_env_var vars in
-    let new_env = (end_label, (len_stack + List.length vars), new_env_vars) in
+    let new_env = env#add_vars vars in
     map_cat "\n" (cogen_stmt new_env) stmts
   | Cc_ast.STMT_IF(cond, stmt, else_stmt) ->
     let label_else = gen_label () in
@@ -266,7 +273,8 @@ let cogen_fundef i ast =
   ] in
   let code_args, env_vars, len_stack = cogen_args args in
   let code_extend = cogen_extend_stack args stmt in
-  let b = cogen_stmt (end_label, len_stack, env_vars) stmt in
+  let env = new environment end_label len_stack env_vars in
+  let b = cogen_stmt env stmt in
   let body = if b = "" then (sp "\tjmp	%s" end_label) else b in
   multi_string [
     header;
