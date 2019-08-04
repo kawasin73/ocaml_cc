@@ -39,7 +39,61 @@ let rec cogen_expr env ast =
     let code_a = cogen_expr env a in
     let code_b = cogen_expr env b in
     let op_code = (match op with
-    | Cc_ast.BIN_OP_PLUS -> "\taddq\t%rbx, %rax"
+    | Cc_ast.BIN_OP_EQ ->        (* = *)
+      "TODO"
+    | Cc_ast.BIN_OP_EQEQ ->      (* == *)
+      multi_string [
+        "\tcmpq\t%rbx, %rax";
+        "\tsete\t%al";
+        "\tmovzbq\t%al, %rax"
+      ]
+    | Cc_ast.BIN_OP_NEQ ->       (* != *)
+      multi_string [
+        "\tcmpq\t%rbx, %rax";
+        "\tsetne\t%al";
+        "\tmovzbq\t%al, %rax"
+      ]
+    | Cc_ast.BIN_OP_LT ->        (* < *)
+      multi_string [
+        "\tcmpq\t%rbx, %rax";
+        "\tsetl\t%al";
+        "\tmovzbq\t%al, %rax"
+      ]
+    | Cc_ast.BIN_OP_GT ->        (* > *)
+      multi_string [
+        "\tcmpq\t%rbx, %rax";
+        "\tsetg\t%al";
+        "\tmovzbq\t%al, %rax"
+      ]
+    | Cc_ast.BIN_OP_LEQ ->       (* <= *)
+      multi_string [
+        "\tcmpq\t%rbx, %rax";
+        "\tsetle\t%al";
+        "\tmovzbq\t%al, %rax"
+      ]
+    | Cc_ast.BIN_OP_GEQ ->       (* >= *)
+      multi_string [
+        "\tcmpq\t%rbx, %rax";
+        "\tsetge\t%al";
+        "\tmovzbq\t%al, %rax"
+      ]
+    | Cc_ast.BIN_OP_PLUS ->      (* + *)
+      "\taddq\t%rbx, %rax"
+    | Cc_ast.BIN_OP_MINUS ->     (* - *)
+      "\tsubq\t%rbx, %rax"
+    | Cc_ast.BIN_OP_MUL ->       (* * *)
+      "\timulq\t%rbx, %rax"
+    | Cc_ast.BIN_OP_DIV ->       (* / *)
+      multi_string [
+        "\tcqto";
+        "\tidivq\t%rbx"
+      ]
+    | Cc_ast.BIN_OP_MOD ->       (* % *)
+      multi_string [
+        "\tcqto";
+        "\tidivq\t%rbx";
+        "\tmovq\t%rdx, %rax"
+      ]
     ) in
     (multi_string [
       code_a;
