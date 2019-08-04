@@ -19,6 +19,19 @@ let multi_string l =
   (String.concat "\n" l)
 ;;
 
+let take n l =
+  let combine i v = (i, v) in
+  let unwrap vv =
+    let (_, v) = vv in
+    v
+  in
+  let first_nth n vv =
+    let (i, _) = vv in
+    i < n
+  in
+  List.map unwrap (List.filter (first_nth n) (List.mapi combine l))
+;;
+
 let rec cogen_expr env ast =
   match ast with
   | Cc_ast.EXPR_NUM(v) -> (multi_string [
@@ -142,21 +155,16 @@ let args_regs = ["rdi"; "rsi"; "rdx"; "rcx"; "r8"; "r9"]
 
 let cogen_args args =
   let cogen_arg i arg =
-    if i < 6 then
-      (multi_string [
-        sp "\tmovq\t%%%s, %d(%%rbp)" (List.nth args_regs i) (-(i+1)*8)
-      ])
-    else
-      "TODO"
+    sp "\tmovq\t%%%s, %d(%%rbp)" (List.nth args_regs i) (-(i+1)*8)
   in
   let env_arg i arg =
     let _, name = arg in
     if i < 6 then
       (name, -(i+1) * 8)
     else
-      (name, (i-5)*8)
+      (name, (i-3)*8)
   in
-  let code = map_cati "\n" cogen_arg args in
+  let code = map_cati "\n" cogen_arg (take 6 args) in
   let env = List.mapi env_arg args in
   code, env
 ;;
@@ -185,12 +193,14 @@ let cogen_fundef i ast =
     sp "%s:" start_label;
     "\t.cfi_startproc";
     "\tpushq	%rbp";
+    "\tpushq	%rbx";
     "\tmovq	%rsp, %rbp"
   ] in
   let footer = multi_string [
     "\t.cfi_endproc";
     sp "%s:" end_label;
     "\tmovq	%rbp, %rsp";
+    "\tpopq	%rbx";
     "\tpopq	%rbp";
     "\tret";
     sp "\t.size\t%s, .-%s" name name
