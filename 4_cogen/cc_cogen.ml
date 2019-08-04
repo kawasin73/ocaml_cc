@@ -37,8 +37,14 @@ object
   val end_label = end_label
   val len_stack = len_stack
   val env_vars = env_vars
+  val continue_label = ""
+  val break_label = ""
   method end_label =
     end_label
+  method continue_label =
+    continue_label
+  method break_label =
+    break_label
   method find_var_offset name =
     let find_var v =
       let n, _ = v in n = name
@@ -52,6 +58,8 @@ object
     in
     let new_env_vars = env_vars @ List.mapi conv_env_var new_vars in
     {<len_stack = (len_stack + List.length new_vars); env_vars = new_env_vars>}
+  method update_loop_label continue_label break_label =
+    {<continue_label = continue_label; break_label = break_label>}
 end
 ;;
 
@@ -180,6 +188,8 @@ let gen_label =
 let rec cogen_stmt env ast =
   match ast with
   | Cc_ast.STMT_EMPTY -> ""
+  | Cc_ast.STMT_CONTINUE -> sp "\tjmp\t%s" env#continue_label
+  | Cc_ast.STMT_BREAK -> sp "\tjmp\t%s" env#break_label
   | Cc_ast.STMT_RETURN(v) ->
     let code = cogen_expr env v in
     multi_string [
@@ -217,7 +227,8 @@ let rec cogen_stmt env ast =
     let label_cond = gen_label () in
     let label_end = gen_label () in
     let code_cond = cogen_expr env cond in
-    let code_stmt = cogen_stmt env stmt in
+    let new_env = env#update_loop_label label_cond label_end in
+    let code_stmt = cogen_stmt new_env stmt in
     multi_string [
       sp "%s:" label_cond;
       code_cond;
