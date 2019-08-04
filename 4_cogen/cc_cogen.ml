@@ -200,10 +200,18 @@ let rec cogen_expr env ast =
     let code_set_args = map_cat "\n" set_arg idx in
     let code_args = map_cat "\n" (cogen_expr env) (List.rev args) in
     multi_string [
+      "\tmovq\t$8, %rdi";
+      sp "\tmovq\t$%d, %%rax" ((stack_arg_size+1) * -8);
+      "\taddq\t%rsp, %rax";
+      "\tandq\t%rdi, %rax";
+      "\tsubq\t%rax, %rsp";
+      "\tpushq\t%rax";
       code_args;
       code_set_args;
       sp "\tcall\t%s" name;
       sp "\taddq\t$%d, %%rsp" (stack_arg_size * 8);
+      "\tpopq\t%rbx";
+      "\taddq\t%rbx, %rsp";
       "\tpushq\t%rax"
     ]
 ;;
