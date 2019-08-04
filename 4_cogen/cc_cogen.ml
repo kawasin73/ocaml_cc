@@ -32,6 +32,19 @@ let take n l =
   List.map unwrap (List.filter (first_nth n) (List.mapi combine l))
 ;;
 
+let create_index a b =
+  let rec create_index_rec l a b =
+    if a = b then
+      l
+    else
+      create_index_rec ((b-1) :: l) a (b-1)
+  in
+  create_index_rec [] a b
+;;
+
+let args_regs = ["rdi"; "rsi"; "rdx"; "rcx"; "r8"; "r9"]
+;;
+
 class environment (end_label:string) len_stack env_vars =
 object
   val end_label = end_label
@@ -177,6 +190,22 @@ let rec cogen_expr env ast =
         "\tpushq\t%rax"
       ]
     )
+  | Cc_ast.EXPR_CALL(name, args) ->
+    let set_arg i =
+      sp "\tpopq\t%%%s" (List.nth args_regs i)
+    in
+    let len_args = List.length args in
+    let idx = take 6 (create_index 0 len_args) in
+    let stack_arg_size = if len_args >= 6 then len_args - 6 else 0 in
+    let code_set_args = map_cat "\n" set_arg idx in
+    let code_args = map_cat "\n" (cogen_expr env) (List.rev args) in
+    multi_string [
+      code_args;
+      code_set_args;
+      sp "\tcall\t%s" name;
+      sp "\taddq\t$%d, %%rsp" (stack_arg_size * 8);
+      "\tpushq\t%rax"
+    ]
 ;;
 
 
@@ -241,9 +270,6 @@ let rec cogen_stmt env ast =
     ]
 ;;
 
-let args_regs = ["rdi"; "rsi"; "rdx"; "rcx"; "r8"; "r9"]
-;;
-
 let cogen_args args =
   let cogen_arg i arg =
     sp "\tmovq\t%%%s, %d(%%rbp)" (List.nth args_regs i) (-(i+1)*8)
@@ -289,12 +315,12 @@ let cogen_fundef i ast =
     "\tmovq	%rsp, %rbp"
   ] in
   let footer = multi_string [
-    "\t.cfi_endproc";
     sp "%s:" end_label;
     "\tmovq	%rbp, %rsp";
     "\tpopq	%rbx";
     "\tpopq	%rbp";
     "\tret";
+    "\t.cfi_endproc";
     sp "\t.size\t%s, .-%s" name name
   ] in
   let code_args, env_vars, len_stack = cogen_args args in
