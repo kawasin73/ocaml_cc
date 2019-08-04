@@ -32,90 +32,110 @@ let take n l =
   List.map unwrap (List.filter (first_nth n) (List.mapi combine l))
 ;;
 
+let find_var_offset name env =
+  let find_var v =
+    let n, _ = v in n = name
+  in
+  let (_, _, env_vars) = env in
+  let _, offset = List.find find_var env_vars in
+  offset
+;;
+
 let rec cogen_expr env ast =
   match ast with
   | Cc_ast.EXPR_NUM(v) -> (multi_string [
       sp "\tmov\t$%d, %%rax" v;
       "\tpushq\t%rax"
     ])
-  | Cc_ast.EXPR_VAR(v) ->
-    let find_var name v =
-      let n, _ = v in n = name
-    in
-    let (_, env_vars) = env in
-    let _, offset = List.find (find_var v) env_vars in
+  | Cc_ast.EXPR_VAR(name) ->
+    let offset = find_var_offset name env in
     (multi_string [
       sp "\tmovq\t%d(%%rbp), %%rax" offset;
       "\tpushq\t%rax"
     ])
   | Cc_ast.EXPR_BIN_OP(op, a, b) ->
-    let code_a = cogen_expr env a in
-    let code_b = cogen_expr env b in
-    let op_code = (match op with
+    (match op with
     | Cc_ast.BIN_OP_EQ ->        (* = *)
-      "TODO"
-    | Cc_ast.BIN_OP_EQEQ ->      (* == *)
-      multi_string [
-        "\tcmpq\t%rbx, %rax";
-        "\tsete\t%al";
-        "\tmovzbq\t%al, %rax"
-      ]
-    | Cc_ast.BIN_OP_NEQ ->       (* != *)
-      multi_string [
-        "\tcmpq\t%rbx, %rax";
-        "\tsetne\t%al";
-        "\tmovzbq\t%al, %rax"
-      ]
-    | Cc_ast.BIN_OP_LT ->        (* < *)
-      multi_string [
-        "\tcmpq\t%rbx, %rax";
-        "\tsetl\t%al";
-        "\tmovzbq\t%al, %rax"
-      ]
-    | Cc_ast.BIN_OP_GT ->        (* > *)
-      multi_string [
-        "\tcmpq\t%rbx, %rax";
-        "\tsetg\t%al";
-        "\tmovzbq\t%al, %rax"
-      ]
-    | Cc_ast.BIN_OP_LEQ ->       (* <= *)
-      multi_string [
-        "\tcmpq\t%rbx, %rax";
-        "\tsetle\t%al";
-        "\tmovzbq\t%al, %rax"
-      ]
-    | Cc_ast.BIN_OP_GEQ ->       (* >= *)
-      multi_string [
-        "\tcmpq\t%rbx, %rax";
-        "\tsetge\t%al";
-        "\tmovzbq\t%al, %rax"
-      ]
-    | Cc_ast.BIN_OP_PLUS ->      (* + *)
-      "\taddq\t%rbx, %rax"
-    | Cc_ast.BIN_OP_MINUS ->     (* - *)
-      "\tsubq\t%rbx, %rax"
-    | Cc_ast.BIN_OP_MUL ->       (* * *)
-      "\timulq\t%rbx, %rax"
-    | Cc_ast.BIN_OP_DIV ->       (* / *)
-      multi_string [
-        "\tcqto";
-        "\tidivq\t%rbx"
-      ]
-    | Cc_ast.BIN_OP_MOD ->       (* % *)
-      multi_string [
-        "\tcqto";
-        "\tidivq\t%rbx";
-        "\tmovq\t%rdx, %rax"
-      ]
-    ) in
-    (multi_string [
-      code_a;
-      code_b;
-      "\tpopq\t%rbx";
-      "\tpopq\t%rax";
-      op_code;
-      "\tpushq\t%rax"
-    ])
+      let code_b = cogen_expr env b in
+      (match a with
+      (* a must be variable name *)
+      | Cc_ast.EXPR_VAR(name) ->
+        let offset = find_var_offset name env in
+        multi_string [
+          code_b;
+          "\tpopq\t%rax";
+          sp "\tmovq\t%%rax, %d(%%rbp)" offset;
+          "\tpushq\t%rax";
+        ]
+      )
+    | _ ->
+      (* else *)
+      let code_a = cogen_expr env a in
+      let code_b = cogen_expr env b in
+      let op_code = (match op with
+      | Cc_ast.BIN_OP_EQEQ ->      (* == *)
+        multi_string [
+          "\tcmpq\t%rbx, %rax";
+          "\tsete\t%al";
+          "\tmovzbq\t%al, %rax"
+        ]
+      | Cc_ast.BIN_OP_NEQ ->       (* != *)
+        multi_string [
+          "\tcmpq\t%rbx, %rax";
+          "\tsetne\t%al";
+          "\tmovzbq\t%al, %rax"
+        ]
+      | Cc_ast.BIN_OP_LT ->        (* < *)
+        multi_string [
+          "\tcmpq\t%rbx, %rax";
+          "\tsetl\t%al";
+          "\tmovzbq\t%al, %rax"
+        ]
+      | Cc_ast.BIN_OP_GT ->        (* > *)
+        multi_string [
+          "\tcmpq\t%rbx, %rax";
+          "\tsetg\t%al";
+          "\tmovzbq\t%al, %rax"
+        ]
+      | Cc_ast.BIN_OP_LEQ ->       (* <= *)
+        multi_string [
+          "\tcmpq\t%rbx, %rax";
+          "\tsetle\t%al";
+          "\tmovzbq\t%al, %rax"
+        ]
+      | Cc_ast.BIN_OP_GEQ ->       (* >= *)
+        multi_string [
+          "\tcmpq\t%rbx, %rax";
+          "\tsetge\t%al";
+          "\tmovzbq\t%al, %rax"
+        ]
+      | Cc_ast.BIN_OP_PLUS ->      (* + *)
+        "\taddq\t%rbx, %rax"
+      | Cc_ast.BIN_OP_MINUS ->     (* - *)
+        "\tsubq\t%rbx, %rax"
+      | Cc_ast.BIN_OP_MUL ->       (* * *)
+        "\timulq\t%rbx, %rax"
+      | Cc_ast.BIN_OP_DIV ->       (* / *)
+        multi_string [
+          "\tcqto";
+          "\tidivq\t%rbx"
+        ]
+      | Cc_ast.BIN_OP_MOD ->       (* % *)
+        multi_string [
+          "\tcqto";
+          "\tidivq\t%rbx";
+          "\tmovq\t%rdx, %rax"
+        ]
+      ) in
+      (multi_string [
+        code_a;
+        code_b;
+        "\tpopq\t%rbx";
+        "\tpopq\t%rax";
+        op_code;
+        "\tpushq\t%rax"
+      ])
+    )
   | Cc_ast.EXPR_UN_OP(op, expr) ->
     let code = cogen_expr env expr in
     (match op with
@@ -141,13 +161,27 @@ let rec cogen_stmt env ast =
   match ast with
   | Cc_ast.STMT_RETURN(v) ->
     let code = cogen_expr env v in
-    let (end_label, _) = env in
+    let (end_label, _, _) = env in
     multi_string [
       code;
       "\tpopq\t%rax";
       sp "\tjmp\t%s" end_label
     ]
-  | Cc_ast.STMT_COMPOUND(_, stmts) -> map_cat "\n" (cogen_stmt env) stmts
+  | Cc_ast.STMT_EXPR(expr) ->
+    let code = cogen_expr env expr in
+    multi_string [
+      code;
+      "\tpopq\t%rax"
+    ]
+  | Cc_ast.STMT_COMPOUND(vars, stmts) ->
+    let (end_label, len_stack, env_vars) = env in
+    let conv_env_var i var =
+      let (_, name) = var in
+      (name, -(i+7) * 8)
+    in
+    let new_env_vars = env_vars @ List.mapi conv_env_var vars in
+    let new_env = (end_label, (len_stack + List.length vars), new_env_vars) in
+    map_cat "\n" (cogen_stmt new_env) stmts
 ;;
 
 let args_regs = ["rdi"; "rsi"; "rdx"; "rcx"; "r8"; "r9"]
@@ -164,9 +198,10 @@ let cogen_args args =
     else
       (name, (i-3)*8)
   in
-  let code = map_cati "\n" cogen_arg (take 6 args) in
+  let reg_args = take 6 args in
+  let code = map_cati "\n" cogen_arg reg_args in
   let env = List.mapi env_arg args in
-  code, env
+  code, env, List.length reg_args
 ;;
 
 let cogen_extend_stack args stmt =
@@ -205,9 +240,9 @@ let cogen_fundef i ast =
     "\tret";
     sp "\t.size\t%s, .-%s" name name
   ] in
-  let code_args, env_vars = cogen_args args in
+  let code_args, env_vars, len_stack = cogen_args args in
   let code_extend = cogen_extend_stack args stmt in
-  let b = cogen_stmt (end_label, env_vars) stmt in
+  let b = cogen_stmt (end_label, len_stack, env_vars) stmt in
   let body = if b = "" then (sp "\tjmp	%s" end_label) else b in
   multi_string [
     header;
