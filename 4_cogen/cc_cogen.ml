@@ -157,8 +157,15 @@ let rec cogen_expr env ast =
     )
 ;;
 
+
+let gen_label =
+  let label_count = ref 0 in
+  fun () -> incr label_count; (sp ".L%d" !label_count)
+;;
+
 let rec cogen_stmt env ast =
   match ast with
+  | Cc_ast.STMT_EMPTY -> ""
   | Cc_ast.STMT_RETURN(v) ->
     let code = cogen_expr env v in
     let (end_label, _, _) = env in
@@ -182,6 +189,23 @@ let rec cogen_stmt env ast =
     let new_env_vars = env_vars @ List.mapi conv_env_var vars in
     let new_env = (end_label, (len_stack + List.length vars), new_env_vars) in
     map_cat "\n" (cogen_stmt new_env) stmts
+  | Cc_ast.STMT_IF(cond, stmt, else_stmt) ->
+    let label_else = gen_label () in
+    let label_end = gen_label () in
+    let code_cond = cogen_expr env cond in
+    let code_stmt = cogen_stmt env stmt in
+    let code_else = cogen_stmt env else_stmt in
+    multi_string [
+      code_cond;
+      "\tpopq\t%rax";
+      "\ttestq\t%rax, %rax";
+      sp "\tje\t%s" label_else;
+      code_stmt;
+      sp "\tjmp\t%s" label_end;
+      sp "%s:" label_else;
+      code_else;
+      sp "%s:" label_end
+    ]
 ;;
 
 let args_regs = ["rdi"; "rsi"; "rdx"; "rcx"; "r8"; "r9"]
